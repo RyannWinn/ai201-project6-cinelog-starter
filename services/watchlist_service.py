@@ -49,7 +49,10 @@ def add_to_watchlist(user_id, film_id):
 
 def get_watchlist(user_id):
     """
-    Return all films on a user's watchlist.
+    Return all films on a user's watchlist, sorted by date added (newest first).
+
+    Sort order matches get_collection() for consistency across the two list
+    endpoints (see Comment 5 in pr-response.md).
 
     Args:
         user_id (str): UUID of the user.
@@ -60,14 +63,14 @@ def get_watchlist(user_id):
     entries = (
         WatchlistEntry.query
         .filter_by(user_id=user_id)
-        .join(Film)
-        .order_by(Film.title.asc())
+        .order_by(WatchlistEntry.date_added.desc())
         .all()
     )
 
     result = []
     for entry in entries:
-        film_dict = entry.film.to_dict()
+        film = db.session.get(Film, entry.film_id)
+        film_dict = film.to_dict()
         film_dict["date_added"] = entry.date_added.isoformat()
         film_dict["public"] = entry.public
         result.append(film_dict)
