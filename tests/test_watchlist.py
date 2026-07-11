@@ -168,3 +168,54 @@ def test_remove_from_watchlist_not_present_raises(app, sample_user, sample_film)
     with app.app_context():
         with pytest.raises(NotInWatchlistError):
             remove_from_watchlist(user_id=sample_user, film_id=sample_film)
+
+
+# ── Visibility parameter (stretch) ───────────────────────────────────────────
+
+def test_add_to_watchlist_respects_public_false(app, sample_user, sample_film):
+    """
+    Passing public=False should store a private entry rather than using the
+    public default.
+    """
+    with app.app_context():
+        entry = add_to_watchlist(
+            user_id=sample_user, film_id=sample_film, public=False
+        )
+        assert entry.public is False
+
+        # Default is still public when the argument is omitted.
+        film2 = Film(title="Whiplash", year=2014)
+        db.session.add(film2)
+        db.session.commit()
+        default_entry = add_to_watchlist(user_id=sample_user, film_id=film2.id)
+        assert default_entry.public is True
+
+
+# ── User isolation (extra edge case, not requested in review) ────────────────
+
+def test_watchlist_is_isolated_per_user(app, sample_user, sample_film):
+    """
+    A film on one user's watchlist must not appear on another user's watchlist.
+
+    I chose this case because get_watchlist() filters by user_id, and the
+    dedup check in add_to_watchlist() also keys on (user_id, film_id): if
+    either query dropped the user_id filter, one user could see or block
+    another user's entries. This test guards that boundary, which none of the
+    review comments covered.
+    """
+    with app.app_context():
+        other_user = User(username="other", email="other@example.com")
+        db.session.add(other_user)
+        db.session.commit()
+        other_id = other_user.id
+
+        add_to_watchlist(user_id=sample_user, film_id=sample_film)
+
+        # The other user's watchlist is unaffected.
+        assert get_watchlist(other_id) == []
+
+        # The same film can be added for a different user (dedup is per-user).
+        entry = add_to_watchlist(user_id=other_id, film_id=sample_film)
+        assert entry.user_id == other_id
+        assert len(get_watchlist(sample_user)) == 1
+        assert len(get_watchlist(other_id)) == 1
